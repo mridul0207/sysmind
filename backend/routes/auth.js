@@ -2,9 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-
-// Mock database
-let users = [];
+const User = require('../models/User');
 
 // Signup route
 router.post('/signup', async (req, res) => {
@@ -12,30 +10,23 @@ router.post('/signup', async (req, res) => {
     const { email, password } = req.body;
     
     // Check if user already exists
-    if (users.find(user => user.email === email)) {
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
     
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
-    
-    // Create user
-    const user = {
-      id: Date.now().toString(),
-      email,
-      password: hashedPassword
-    };
-    
-    users.push(user);
+    // Create user (password is hashed in pre-save hook)
+    const user = new User({ email, password });
+    await user.save();
     
     // Generate token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '1h' }
-    );
+    const token = user.generateAuthToken();
     
-    res.status(201).json({ userId: user.id, email: user.email, token });
+    res.status(201).json({ 
+      userId: user._id, 
+      email: user.email, 
+      token 
+    });
   } catch (error) {
     res.status(500).json({ message: 'Something went wrong' });
   }
@@ -47,7 +38,7 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body;
     
     // Find user
-    const user = users.find(user => user.email === email);
+    const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -59,13 +50,13 @@ router.post('/login', async (req, res) => {
     }
     
     // Generate token
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '1h' }
-    );
+    const token = user.generateAuthToken();
     
-    res.json({ userId: user.id, email: user.email, token });
+    res.json({ 
+      userId: user._id, 
+      email: user.email, 
+      token 
+    });
   } catch (error) {
     res.status(500).json({ message: 'Something went wrong' });
   }
