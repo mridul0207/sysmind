@@ -20,9 +20,10 @@ app.use(bodyParser.json());
 // Routes
 app.use('/api/auth', authRoutes);
 
-// Track online users and rooms
+// Track online users, rooms, and typing users
 const onlineUsers = {};
 const rooms = {};
+const typingUsers = {};
 
 // Socket.IO connection handler
 io.on('connection', (socket) => {
@@ -34,22 +35,37 @@ io.on('connection', (socket) => {
     io.emit('online users', Object.keys(onlineUsers));
   });
 
-  // Handle chat messages
+  // Handle chat messages with timestamp
   socket.on('chat message', ({ roomId, message, senderId }) => {
+    const timestamp = new Date().toISOString();
     if (roomId) {
       // Room message
-      io.to(roomId).emit('chat message', { senderId, message });
+      io.to(roomId).emit('chat message', { senderId, message, timestamp });
     } else {
       // Broadcast to all
-      io.emit('chat message', { senderId, message });
+      io.emit('chat message', { senderId, message, timestamp });
     }
   });
 
-  // Handle private messages
+  // Handle private messages with timestamp
   socket.on('private message', ({ recipientId, message, senderId }) => {
+    const timestamp = new Date().toISOString();
     const recipientSocketId = onlineUsers[recipientId];
     if (recipientSocketId) {
-      io.to(recipientSocketId).emit('private message', { senderId, message });
+      io.to(recipientSocketId).emit('private message', { senderId, message, timestamp });
+    }
+  });
+
+  // Handle typing indicators
+  socket.on('typing', ({ roomId, userId, isTyping }) => {
+    if (roomId) {
+      // Room typing indicator
+      if (isTyping) {
+        typingUsers[userId] = roomId;
+      } else {
+        delete typingUsers[userId];
+      }
+      io.to(roomId).emit('typing users', Object.keys(typingUsers).filter(id => typingUsers[id] === roomId));
     }
   });
 
@@ -91,6 +107,13 @@ io.on('connection', (socket) => {
         if (rooms[roomId].size === 0) {
           delete rooms[roomId];
         }
+      }
+    });
+    // Remove user from typing indicators
+    Object.keys(typingUsers).forEach(typingUserId => {
+      if (typingUserId === userId) {
+        delete typingUsers[userId];
+        io.to(typingUsers[userId]).emit('typing users', Object.keys(typingUsers).filter(id => typingUsers[id] === typingUsers[userId]));
       }
     });
   });
